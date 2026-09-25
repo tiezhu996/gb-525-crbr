@@ -116,7 +116,7 @@ func (r *profileRepository) Usage(ctx context.Context, profileID uint) ([]dto.Pr
 		}
 		for _, step := range steps {
 			if step.ProfileID == profileID {
-				result = append(result, dto.ProfileUsage{RouteID: route.ID, RouteCode: route.RouteCode, ProductName: route.ProductName, RouteVersion: route.Version})
+				result = append(result, dto.ProfileUsage{RouteID: route.ID, RouteCode: route.RouteCode, ProductName: route.ProductName, RouteStatus: route.RouteStatus, RouteVersion: route.Version})
 				break
 			}
 		}

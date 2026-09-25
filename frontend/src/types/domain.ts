@@ -36,4 +36,5 @@ export interface AuditEvent {
 
 export interface PageResult<T> { data: T[]; total: number; page: number; pageSize: number }
 export interface VersionDiff { entity_type: string; entity_id: number; version: number; latest_audit: Record<string, unknown> }
+export interface ProfileUsage { route_id: number; route_code: string; product_name: string; route_status: 'draft' | 'active' | 'retired'; route_version: number }
 export type { AssessmentRun }

@@ -29,6 +29,7 @@ type ProfileUsage struct {
 	RouteID      uint   `json:"route_id"`
 	RouteCode    string `json:"route_code"`
 	ProductName  string `json:"product_name"`
+	RouteStatus  string `json:"route_status"`
 	RouteVersion uint   `json:"route_version"`
 }
 

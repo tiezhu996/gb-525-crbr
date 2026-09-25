@@ -5,9 +5,17 @@ import (
 	"sort"
 	"strings"
 
-	"food-allergen-crosscontact-analyzer/backend/internal/dto"
 	"food-allergen-crosscontact-analyzer/backend/internal/model"
 )
+
+// StepInput is the ordered route step as needed by graph construction. It is a
+// subset of the transport DTO kept local so the analyzer layer does not depend
+// on the dto package.
+type StepInput struct {
+	StepCode  string `json:"step_code"`
+	StepName  string `json:"step_name"`
+	ProfileID uint   `json:"profile_id"`
+}
 
 type Node struct {
 	Code      string `json:"code"`
@@ -35,7 +43,7 @@ type Graph struct {
 	Edges    []Edge            `json:"edges"`
 }
 
-func BuildGraph(steps []dto.RouteStep, records []model.ContactEdge) (Graph, error) {
+func BuildGraph(steps []StepInput, records []model.ContactEdge) (Graph, error) {
 	graph := Graph{Nodes: make(map[string]Node), Outgoing: make(map[string][]Edge)}
 	if len(steps) < 2 {
 		return Graph{}, fmt.Errorf("route graph requires at least two steps")

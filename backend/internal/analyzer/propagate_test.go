@@ -5,7 +5,6 @@ import (
 
 	"food-allergen-crosscontact-analyzer/backend/internal/config"
 	"food-allergen-crosscontact-analyzer/backend/internal/constants"
-	"food-allergen-crosscontact-analyzer/backend/internal/dto"
 	"food-allergen-crosscontact-analyzer/backend/internal/model"
 )
 
@@ -14,7 +13,7 @@ func TestPropagate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	steps := []dto.RouteStep{{StepCode: "A", StepName: "Source", ProfileID: 1}, {StepCode: "B", StepName: "Middle", ProfileID: 2}, {StepCode: "C", StepName: "Target", ProfileID: 2}}
+	steps := []StepInput{{StepCode: "A", StepName: "Source", ProfileID: 1}, {StepCode: "B", StepName: "Middle", ProfileID: 2}, {StepCode: "C", StepName: "Target", ProfileID: 2}}
 	profiles := map[uint]ProfileSeed{1: {ProfileID: 1, ProfileCode: "P-1", MaterialName: "Peanut paste", Version: 1, Allergens: []string{"Peanut"}}, 2: {ProfileID: 2, ProfileCode: "P-2", MaterialName: "Milk powder", Version: 1, Allergens: []string{"Milk"}}}
 	tests := []struct {
 		name                     string

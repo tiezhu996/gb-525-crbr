@@ -14,6 +14,7 @@ type RouteRepository interface {
 	Create(context.Context, *model.ProcessRoute, AuditContext) error
 	Get(context.Context, uint) (model.ProcessRoute, error)
 	List(context.Context, dto.RouteQuery) ([]model.ProcessRoute, int64, error)
+	ActiveRoutes(context.Context) ([]model.ProcessRoute, error)
 	Update(context.Context, *model.ProcessRoute, uint, AuditContext) error
 }
 
@@ -67,6 +68,14 @@ func (r *routeRepository) List(ctx context.Context, query dto.RouteQuery) ([]mod
 		return nil, 0, fmt.Errorf("list process routes: %w", err)
 	}
 	return routes, total, nil
+}
+
+func (r *routeRepository) ActiveRoutes(ctx context.Context) ([]model.ProcessRoute, error) {
+	var routes []model.ProcessRoute
+	if err := r.db.WithContext(ctx).Where("route_status = ?", "active").Order("route_code, id").Find(&routes).Error; err != nil {
+		return nil, fmt.Errorf("list active routes: %w", err)
+	}
+	return routes, nil
 }
 
 func (r *routeRepository) Update(ctx context.Context, route *model.ProcessRoute, expected uint, scope AuditContext) error {

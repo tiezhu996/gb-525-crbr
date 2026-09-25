@@ -3,15 +3,14 @@ package analyzer
 import (
 	"testing"
 
-	"food-allergen-crosscontact-analyzer/backend/internal/dto"
 	"food-allergen-crosscontact-analyzer/backend/internal/model"
 )
 
 func TestBuildGraphValidation(t *testing.T) {
-	base := []dto.RouteStep{{StepCode: "A", StepName: "A step", ProfileID: 1}, {StepCode: "B", StepName: "B step", ProfileID: 2}}
+	base := []StepInput{{StepCode: "A", StepName: "A step", ProfileID: 1}, {StepCode: "B", StepName: "B step", ProfileID: 2}}
 	tests := []struct {
 		name    string
-		steps   []dto.RouteStep
+		steps   []StepInput
 		edges   []model.ContactEdge
 		wantErr bool
 	}{
@@ -40,7 +39,7 @@ func TestDetectCycles(t *testing.T) {
 		{name: "acyclic", edges: []model.ContactEdge{{ID: 1, FromStepCode: "A", ToStepCode: "B", Enabled: true}}},
 		{name: "one cycle", edges: []model.ContactEdge{{ID: 1, FromStepCode: "A", ToStepCode: "B", Enabled: true}, {ID: 2, FromStepCode: "B", ToStepCode: "A", Enabled: true}}, want: 1},
 	}
-	steps := []dto.RouteStep{{StepCode: "A", StepName: "A step", ProfileID: 1}, {StepCode: "B", StepName: "B step", ProfileID: 2}}
+	steps := []StepInput{{StepCode: "A", StepName: "A step", ProfileID: 1}, {StepCode: "B", StepName: "B step", ProfileID: 2}}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			graph, err := BuildGraph(steps, test.edges)

@@ -27,7 +27,7 @@ func (s *ProfileService) Create(ctx context.Context, request dto.CreateProfileRe
 	if err != nil {
 		return model.AllergenProfile{}, err
 	}
-	allergens, err := encodeAllergens(request.Allergens)
+	allergens, err := NormalizeAllergens(request.Allergens)
 	if err != nil {
 		return model.AllergenProfile{}, err
 	}
@@ -59,7 +59,7 @@ func (s *ProfileService) List(ctx context.Context, query dto.ProfileQuery) ([]mo
 }
 
 func (s *ProfileService) Update(ctx context.Context, id uint, request dto.UpdateProfileRequest, actor Principal, requestID string) (model.AllergenProfile, error) {
-	allergens, err := encodeAllergens(request.Allergens)
+	allergens, err := NormalizeAllergens(request.Allergens)
 	if err != nil {
 		return model.AllergenProfile{}, err
 	}
@@ -74,7 +74,10 @@ func (s *ProfileService) Update(ctx context.Context, id uint, request dto.Update
 	return profile, nil
 }
 
-func encodeAllergens(items []string) (datatypes.JSON, error) {
+// NormalizeAllergens trims, de-duplicates (case-insensitive) and sorts the
+// proposed allergen labels, then encodes them in the canonical JSON form used
+// by allergen_profiles.allergens_json.
+func NormalizeAllergens(items []string) (datatypes.JSON, error) {
 	seen := make(map[string]string)
 	for _, item := range items {
 		clean := strings.TrimSpace(item)

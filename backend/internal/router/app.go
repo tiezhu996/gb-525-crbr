@@ -21,6 +21,7 @@ type Handlers struct {
 	Routes      *handler.RouteHandler
 	Edges       *handler.ContactEdgeHandler
 	Assessments *handler.AssessmentHandler
+	Impacts     *handler.ImpactPreviewHandler
 }
 
 func New(cfg config.Config, logger *slog.Logger, database *repository.Database, support *service.SupportService, handlers Handlers) *gin.Engine {
@@ -43,7 +44,7 @@ func New(cfg config.Config, logger *slog.Logger, database *repository.Database, 
 	protected := api.Group("")
 	protected.Use(middleware.AuthWithResolver(support.ParseToken, support.CurrentPrincipal))
 	protected.GET("/auth/me", handlers.Support.Me)
-	registerProfileRoutes(protected, handlers.Profiles)
+	registerProfileRoutes(protected, handlers.Profiles, handlers.Impacts)
 	registerRouteRoutes(protected, handlers.Routes)
 	registerContactEdgeRoutes(protected, handlers.Edges)
 	registerAssessmentRoutes(protected, handlers.Assessments)

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"time"
 
 	"food-allergen-crosscontact-analyzer/backend/internal/analyzer"
@@ -18,13 +17,9 @@ import (
 )
 
 type AssessmentService struct {
-	runs       repository.AssessmentRepository
-	routes     repository.RouteRepository
-	profiles   repository.ProfileRepository
-	edges      repository.ContactEdgeRepository
-	maxDepth   int
-	thresholds analyzer.ThresholdSnapshot
-	algorithm  string
+	runs repository.AssessmentRepository
+	routeAnalyzer
+	algorithm string
 }
 
 type queuedAssessmentSnapshot struct {
@@ -37,12 +32,16 @@ func NewAssessmentService(runs repository.AssessmentRepository, routes repositor
 	if err != nil {
 		return nil, fmt.Errorf("initialize thresholds: %w", err)
 	}
-	return &AssessmentService{runs: runs, routes: routes, profiles: profiles, edges: edges, maxDepth: cfg.MaxPropagationDepth, thresholds: thresholds, algorithm: "weighted-path-v1/" + thresholds.Version}, nil
+	algorithm := "weighted-path-v1/" + thresholds.Version
+	return &AssessmentService{runs: runs, routeAnalyzer: newRouteAnalyzer(routes, profiles, edges, cfg.MaxPropagationDepth, thresholds), algorithm: algorithm}, nil
 }
 
 func (s *AssessmentService) Preview(ctx context.Context, routeID uint) (analyzer.Result, error) {
-	result, _, err := s.compute(ctx, routeID)
-	return result, err
+	result, err := s.analyze(ctx, routeID, nil)
+	if err != nil {
+		return analyzer.Result{}, err
+	}
+	return result.Result, nil
 }
 
 func (s *AssessmentService) Create(ctx context.Context, request dto.CreateAssessmentRequest, actor Principal, requestID string) (model.AssessmentRun, error) {
@@ -89,22 +88,27 @@ func (s *AssessmentService) Run(ctx context.Context, id uint, actor Principal, r
 		s.resetAfterFailure(ctx, id, conflictErr, actor, requestID)
 		return model.AssessmentRun{}, conflictErr
 	}
-	result, snapshot, err := s.computeRoute(ctx, route)
+	analyzed, err := s.analyzeRoute(ctx, route, nil)
 	if err != nil {
 		s.resetAfterFailure(ctx, id, err, actor, requestID)
 		return model.AssessmentRun{}, err
 	}
-	matrixJSON, err := json.Marshal(result.Matrix)
+	matrixJSON, err := json.Marshal(analyzed.Result.Matrix)
 	if err != nil {
 		s.resetAfterFailure(ctx, id, err, actor, requestID)
 		return model.AssessmentRun{}, fmt.Errorf("encode assessment matrix: %w", err)
 	}
-	riskJSON, err := json.Marshal(result.RiskItems)
+	riskJSON, err := json.Marshal(analyzed.Result.RiskItems)
 	if err != nil {
 		s.resetAfterFailure(ctx, id, err, actor, requestID)
 		return model.AssessmentRun{}, fmt.Errorf("encode assessment risk items: %w", err)
 	}
-	if err := s.runs.CompleteCalculation(ctx, id, snapshot, datatypes.JSON(matrixJSON), datatypes.JSON(riskJSON), result.HighestRiskLevel, s.algorithm, AuditScope(actor, requestID)); err != nil {
+	snapshot, err := s.buildSnapshot(analyzed, s.algorithm)
+	if err != nil {
+		s.resetAfterFailure(ctx, id, err, actor, requestID)
+		return model.AssessmentRun{}, err
+	}
+	if err := s.runs.CompleteCalculation(ctx, id, snapshot, datatypes.JSON(matrixJSON), datatypes.JSON(riskJSON), analyzed.Result.HighestRiskLevel, s.algorithm, AuditScope(actor, requestID)); err != nil {
 		return model.AssessmentRun{}, err
 	}
 	return s.runs.Get(ctx, id)
@@ -132,73 +136,6 @@ func (s *AssessmentService) List(ctx context.Context, query dto.AssessmentQuery)
 }
 func (s *AssessmentService) Summary(ctx context.Context) (dto.AssessmentSummary, error) {
 	return s.runs.Summary(ctx)
-}
-
-func (s *AssessmentService) compute(ctx context.Context, routeID uint) (analyzer.Result, datatypes.JSON, error) {
-	route, err := s.routes.Get(ctx, routeID)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	return s.computeRoute(ctx, route)
-}
-
-func (s *AssessmentService) computeRoute(ctx context.Context, route model.ProcessRoute) (analyzer.Result, datatypes.JSON, error) {
-	steps, err := DecodeRouteSteps(route)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	declared, err := DecodeDeclared(route)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	edges, err := s.edges.ForRoute(ctx, route.ID)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	ids := make([]uint, 0, len(steps))
-	seen := make(map[uint]bool)
-	for _, step := range steps {
-		if !seen[step.ProfileID] {
-			seen[step.ProfileID] = true
-			ids = append(ids, step.ProfileID)
-		}
-	}
-	profiles, err := s.profiles.GetMany(ctx, ids)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	if len(profiles) != len(ids) {
-		return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "profile_missing", "路线引用的过敏原谱已不可用", nil)
-	}
-	seeds := make(map[uint]analyzer.ProfileSeed, len(profiles))
-	profileVersions := make([]map[string]any, 0, len(profiles))
-	for _, profile := range profiles {
-		var allergens []string
-		if err := json.Unmarshal(profile.AllergensJSON, &allergens); err != nil {
-			return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "profile_json_invalid", "过敏原谱内容无法解析", err)
-		}
-		seeds[profile.ID] = analyzer.ProfileSeed{ProfileID: profile.ID, ProfileCode: profile.ProfileCode, MaterialName: profile.MaterialName, Version: profile.Version, Allergens: allergens}
-		profileVersions = append(profileVersions, map[string]any{"id": profile.ID, "code": profile.ProfileCode, "version": profile.Version})
-	}
-	graph, err := analyzer.BuildGraph(steps, edges)
-	if err != nil {
-		return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "graph_invalid", "接触图结构无效", err)
-	}
-	result, err := analyzer.Propagate(graph, seeds, declared, s.maxDepth, s.thresholds)
-	if err != nil {
-		return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "propagation_failed", "风险传播计算失败", err)
-	}
-	sort.Slice(profileVersions, func(i, j int) bool { return profileVersions[i]["id"].(uint) < profileVersions[j]["id"].(uint) })
-	edgeVersions := make([]map[string]any, 0, len(edges))
-	for _, edge := range edges {
-		edgeVersions = append(edgeVersions, map[string]any{"id": edge.ID, "version": edge.Version, "enabled": edge.Enabled})
-	}
-	snapshotValue := map[string]any{"captured_at": time.Now().UTC(), "route": map[string]any{"id": route.ID, "code": route.RouteCode, "version": route.Version, "steps": steps, "declared_allergens": declared}, "profiles": profileVersions, "contact_edges": edgeVersions, "thresholds": s.thresholds, "algorithm_version": s.algorithm, "max_depth": s.maxDepth, "cycles": result.Cycles}
-	snapshot, err := json.Marshal(snapshotValue)
-	if err != nil {
-		return analyzer.Result{}, nil, fmt.Errorf("encode input snapshot: %w", err)
-	}
-	return result, datatypes.JSON(snapshot), nil
 }
 
 func (s *AssessmentService) resetAfterFailure(ctx context.Context, id uint, calculationErr error, actor Principal, requestID string) {
