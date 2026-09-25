@@ -12,5 +12,6 @@ func registerProfileRoutes(group *gin.RouterGroup, h *handler.ProfileHandler) {
 	profiles.GET("", h.List)
 	profiles.GET("/:id", h.Get)
 	profiles.POST("", middleware.RBAC(constants.RoleQualityAnalyst, constants.RoleAdmin), h.Create)
+	profiles.POST("/:id/impact-preview", h.ImpactPreview)
 	profiles.PUT("/:id", middleware.RBAC(constants.RoleQualityAnalyst, constants.RoleAdmin), h.Update)
 }

@@ -22,6 +22,7 @@ type AssessmentService struct {
 	routes     repository.RouteRepository
 	profiles   repository.ProfileRepository
 	edges      repository.ContactEdgeRepository
+	propagator routePropagator
 	maxDepth   int
 	thresholds analyzer.ThresholdSnapshot
 	algorithm  string
@@ -37,7 +38,7 @@ func NewAssessmentService(runs repository.AssessmentRepository, routes repositor
 	if err != nil {
 		return nil, fmt.Errorf("initialize thresholds: %w", err)
 	}
-	return &AssessmentService{runs: runs, routes: routes, profiles: profiles, edges: edges, maxDepth: cfg.MaxPropagationDepth, thresholds: thresholds, algorithm: "weighted-path-v1/" + thresholds.Version}, nil
+	return &AssessmentService{runs: runs, routes: routes, profiles: profiles, edges: edges, propagator: newRoutePropagator(routes, profiles, edges, cfg.MaxPropagationDepth, thresholds), maxDepth: cfg.MaxPropagationDepth, thresholds: thresholds, algorithm: "weighted-path-v1/" + thresholds.Version}, nil
 }
 
 func (s *AssessmentService) Preview(ctx context.Context, routeID uint) (analyzer.Result, error) {
@@ -143,57 +144,24 @@ func (s *AssessmentService) compute(ctx context.Context, routeID uint) (analyzer
 }
 
 func (s *AssessmentService) computeRoute(ctx context.Context, route model.ProcessRoute) (analyzer.Result, datatypes.JSON, error) {
-	steps, err := DecodeRouteSteps(route)
+	input, err := s.propagator.loadRoute(ctx, route)
 	if err != nil {
 		return analyzer.Result{}, nil, err
 	}
-	declared, err := DecodeDeclared(route)
+	result, err := s.propagator.propagate(input, input.seeds)
 	if err != nil {
 		return analyzer.Result{}, nil, err
 	}
-	edges, err := s.edges.ForRoute(ctx, route.ID)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	ids := make([]uint, 0, len(steps))
-	seen := make(map[uint]bool)
-	for _, step := range steps {
-		if !seen[step.ProfileID] {
-			seen[step.ProfileID] = true
-			ids = append(ids, step.ProfileID)
-		}
-	}
-	profiles, err := s.profiles.GetMany(ctx, ids)
-	if err != nil {
-		return analyzer.Result{}, nil, err
-	}
-	if len(profiles) != len(ids) {
-		return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "profile_missing", "路线引用的过敏原谱已不可用", nil)
-	}
-	seeds := make(map[uint]analyzer.ProfileSeed, len(profiles))
-	profileVersions := make([]map[string]any, 0, len(profiles))
-	for _, profile := range profiles {
-		var allergens []string
-		if err := json.Unmarshal(profile.AllergensJSON, &allergens); err != nil {
-			return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "profile_json_invalid", "过敏原谱内容无法解析", err)
-		}
-		seeds[profile.ID] = analyzer.ProfileSeed{ProfileID: profile.ID, ProfileCode: profile.ProfileCode, MaterialName: profile.MaterialName, Version: profile.Version, Allergens: allergens}
+	profileVersions := make([]map[string]any, 0, len(input.profiles))
+	for _, profile := range input.profiles {
 		profileVersions = append(profileVersions, map[string]any{"id": profile.ID, "code": profile.ProfileCode, "version": profile.Version})
 	}
-	graph, err := analyzer.BuildGraph(steps, edges)
-	if err != nil {
-		return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "graph_invalid", "接触图结构无效", err)
-	}
-	result, err := analyzer.Propagate(graph, seeds, declared, s.maxDepth, s.thresholds)
-	if err != nil {
-		return analyzer.Result{}, nil, NewError(http.StatusUnprocessableEntity, "propagation_failed", "风险传播计算失败", err)
-	}
 	sort.Slice(profileVersions, func(i, j int) bool { return profileVersions[i]["id"].(uint) < profileVersions[j]["id"].(uint) })
-	edgeVersions := make([]map[string]any, 0, len(edges))
-	for _, edge := range edges {
+	edgeVersions := make([]map[string]any, 0, len(input.edges))
+	for _, edge := range input.edges {
 		edgeVersions = append(edgeVersions, map[string]any{"id": edge.ID, "version": edge.Version, "enabled": edge.Enabled})
 	}
-	snapshotValue := map[string]any{"captured_at": time.Now().UTC(), "route": map[string]any{"id": route.ID, "code": route.RouteCode, "version": route.Version, "steps": steps, "declared_allergens": declared}, "profiles": profileVersions, "contact_edges": edgeVersions, "thresholds": s.thresholds, "algorithm_version": s.algorithm, "max_depth": s.maxDepth, "cycles": result.Cycles}
+	snapshotValue := map[string]any{"captured_at": time.Now().UTC(), "route": map[string]any{"id": route.ID, "code": route.RouteCode, "version": route.Version, "steps": input.steps, "declared_allergens": input.declared}, "profiles": profileVersions, "contact_edges": edgeVersions, "thresholds": s.thresholds, "algorithm_version": s.algorithm, "max_depth": s.maxDepth, "cycles": result.Cycles}
 	snapshot, err := json.Marshal(snapshotValue)
 	if err != nil {
 		return analyzer.Result{}, nil, fmt.Errorf("encode input snapshot: %w", err)

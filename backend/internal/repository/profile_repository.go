@@ -17,6 +17,7 @@ type ProfileRepository interface {
 	List(context.Context, dto.ProfileQuery) ([]model.AllergenProfile, int64, error)
 	Update(context.Context, *model.AllergenProfile, uint, AuditContext) error
 	Usage(context.Context, uint) ([]dto.ProfileUsage, error)
+	ReferencingRoutes(context.Context, uint) ([]dto.ProfileUsage, error)
 	GetMany(context.Context, []uint) ([]model.AllergenProfile, error)
 }
 
@@ -104,6 +105,12 @@ func (r *profileRepository) Update(ctx context.Context, profile *model.AllergenP
 }
 
 func (r *profileRepository) Usage(ctx context.Context, profileID uint) ([]dto.ProfileUsage, error) {
+	return r.ReferencingRoutes(ctx, profileID)
+}
+
+// ReferencingRoutes returns every route whose ordered steps reference the
+// profile, including draft and retired routes, ordered by route code.
+func (r *profileRepository) ReferencingRoutes(ctx context.Context, profileID uint) ([]dto.ProfileUsage, error) {
 	var routes []model.ProcessRoute
 	if err := r.db.WithContext(ctx).Order("route_code").Find(&routes).Error; err != nil {
 		return nil, fmt.Errorf("list routes for profile usage: %w", err)
@@ -116,7 +123,7 @@ func (r *profileRepository) Usage(ctx context.Context, profileID uint) ([]dto.Pr
 		}
 		for _, step := range steps {
 			if step.ProfileID == profileID {
-				result = append(result, dto.ProfileUsage{RouteID: route.ID, RouteCode: route.RouteCode, ProductName: route.ProductName, RouteVersion: route.Version})
+				result = append(result, dto.ProfileUsage{RouteID: route.ID, RouteCode: route.RouteCode, ProductName: route.ProductName, RouteStatus: route.RouteStatus, RouteVersion: route.Version})
 				break
 			}
 		}

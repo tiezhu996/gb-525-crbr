@@ -10,11 +10,12 @@ import (
 
 type ProfileHandler struct {
 	service  *service.ProfileService
+	impact   *service.ProfileImpactService
 	validate *validator.Validate
 }
 
-func NewProfileHandler(svc *service.ProfileService, validate *validator.Validate) *ProfileHandler {
-	return &ProfileHandler{service: svc, validate: validate}
+func NewProfileHandler(svc *service.ProfileService, impact *service.ProfileImpactService, validate *validator.Validate) *ProfileHandler {
+	return &ProfileHandler{service: svc, impact: impact, validate: validate}
 }
 
 func (h *ProfileHandler) List(c *gin.Context) {
@@ -80,4 +81,24 @@ func (h *ProfileHandler) Update(c *gin.Context) {
 		return
 	}
 	util.OK(c, item)
+}
+
+// ImpactPreview is read-only: it computes the matrix diff of a proposed
+// allergen set against the active routes referencing the profile but never
+// persists the profile, routes, edges, or assessment runs.
+func (h *ProfileHandler) ImpactPreview(c *gin.Context) {
+	id, ok := util.PathID(c, "id")
+	if !ok {
+		return
+	}
+	var request dto.ProfileImpactPreviewRequest
+	if !util.BindJSON(c, &request, h.validate) {
+		return
+	}
+	result, err := h.impact.Preview(c.Request.Context(), id, request)
+	if err != nil {
+		util.Error(c, err)
+		return
+	}
+	util.OK(c, result)
 }

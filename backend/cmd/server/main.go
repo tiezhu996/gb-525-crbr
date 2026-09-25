@@ -68,8 +68,13 @@ func main() {
 		logger.Error("assessment_service_failed", "error", err)
 		os.Exit(1)
 	}
+	profileImpactService, err := service.NewProfileImpactService(routeRepo, profileRepo, edgeRepo, cfg)
+	if err != nil {
+		logger.Error("profile_impact_service_failed", "error", err)
+		os.Exit(1)
+	}
 	validate := validator.New(validator.WithRequiredStructEnabled())
-	handlers := router.Handlers{Support: handler.NewSupportHandler(supportService, validate), Profiles: handler.NewProfileHandler(profileService, validate), Routes: handler.NewRouteHandler(routeService, validate), Edges: handler.NewContactEdgeHandler(edgeService, validate), Assessments: handler.NewAssessmentHandler(assessmentService, validate)}
+	handlers := router.Handlers{Support: handler.NewSupportHandler(supportService, validate), Profiles: handler.NewProfileHandler(profileService, profileImpactService, validate), Routes: handler.NewRouteHandler(routeService, validate), Edges: handler.NewContactEdgeHandler(edgeService, validate), Assessments: handler.NewAssessmentHandler(assessmentService, validate)}
 	engine := router.New(cfg, logger, database, supportService, handlers)
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: engine, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
 	serverErrors := make(chan error, 1)

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
-import { Edit3, Plus, RefreshCw, Search, Waypoints } from 'lucide-vue-next'
+import { Edit3, GitBranch, Plus, RefreshCw, Search, Waypoints } from 'lucide-vue-next'
 import { ElMessage } from 'element-plus'
 import { profileApi } from '@/api/domain'
 import { useAuth } from '@/hooks/useAuth'
+import ProfileImpactDrawer from '@/components/common/ProfileImpactDrawer.vue'
 import type { AllergenProfile } from '@/types/domain'
 import { dateTime, sourceTypeLabel } from '@/utils/format'
 
@@ -17,12 +18,21 @@ const saving = ref(false)
 const editing = ref<AllergenProfile>()
 const usageOpen = ref(false)
 const usageLoading = ref(false)
-const usage = ref<Array<{ route_id: number; route_code: string; product_name: string; route_version: number }>>([])
+const usage = ref<Array<{ route_id: number; route_code: string; product_name: string; route_status: string; route_version: number }>>([])
 const form = reactive({ profile_code: '', material_name: '', allergens: '', source_type: 'supplier_statement', supplier_statement_date: '', profile_status: 'active' })
+const impactOpen = ref(false)
+const impactProfile = ref<AllergenProfile>()
+const impactDraft = ref<string[] | null>(null)
 
 async function load() { loading.value = true; try { const result = await profileApi.list({ search: query.search || undefined, status: query.status || undefined, page_size: 100 }); profiles.value = result.items; total.value = result.total } finally { loading.value = false } }
 function openCreate() { editing.value = undefined; Object.assign(form, { profile_code: '', material_name: '', allergens: '', source_type: 'supplier_statement', supplier_statement_date: '', profile_status: 'active' }); dialog.value = true }
 function openEdit(item: AllergenProfile) { editing.value = item; Object.assign(form, { profile_code: item.profile_code, material_name: item.material_name, allergens: item.allergens_json.join(', '), source_type: item.source_type, supplier_statement_date: item.supplier_statement_date?.slice(0, 10) || '', profile_status: item.profile_status }); dialog.value = true }
+function openImpact(item: AllergenProfile, draft?: string[]) { impactProfile.value = item; impactDraft.value = draft ?? null; impactOpen.value = true }
+function previewDraftImpact() {
+  if (!editing.value) return
+  const allergens = form.allergens.split(/[,，]/).map((item) => item.trim()).filter(Boolean)
+  openImpact(editing.value, allergens)
+}
 async function save() {
   const allergens = form.allergens.split(/[,，]/).map((item) => item.trim()).filter(Boolean)
   if (!form.material_name.trim() || !allergens.length) return
@@ -51,6 +61,7 @@ onMounted(load)
         <el-table-column label="声明日期" width="130"><template #default="{ row }">{{ row.supplier_statement_date?.slice(0, 10) || '—' }}</template></el-table-column>
         <el-table-column label="状态 / 版本" width="130"><template #default="{ row }"><span class="status-pill" :class="row.profile_status">{{ row.profile_status }}</span><span class="mono muted" style="margin-left: 7px">v{{ row.version }}</span></template></el-table-column>
         <el-table-column label="更新时间" width="160"><template #default="{ row }">{{ dateTime(row.updated_at) }}</template></el-table-column>
+        <el-table-column label="影响" width="72" fixed="right"><template #default="{ row }"><el-tooltip content="只读推演生效路线矩阵影响"><el-button :icon="GitBranch" text circle aria-label="影响推演" @click="openImpact(row)" /></el-tooltip></template></el-table-column>
         <el-table-column v-if="auth.canEdit.value" label="" width="58" fixed="right"><template #default="{ row }"><el-tooltip content="编辑"><el-button :icon="Edit3" text circle aria-label="编辑" @click="openEdit(row)" /></el-tooltip></template></el-table-column>
         <template #empty><div class="empty-state"><div><strong>暂无匹配的过敏原谱</strong><span>调整筛选条件或创建第一条记录</span></div></div></template>
       </el-table>
@@ -64,13 +75,16 @@ onMounted(load)
       <el-form-item label="过敏原" required><el-input v-model="form.allergens" placeholder="多个过敏原用逗号分隔" /></el-form-item>
       <div class="form-grid"><el-form-item label="证据来源" required><el-select v-model="form.source_type" style="width: 100%"><el-option label="供应商声明" value="supplier_statement" /><el-option label="配方依据" value="formulation" /><el-option label="实验室资料" value="laboratory" /><el-option label="内部复核" value="internal_review" /></el-select></el-form-item><el-form-item label="声明日期"><el-date-picker v-model="form.supplier_statement_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" /></el-form-item></div>
     </el-form>
-    <template #footer><el-button @click="dialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
+    <template #footer><div class="dialog-footer"><el-button v-if="editing" :icon="GitBranch" @click="previewDraftImpact">先推演影响（只读）</el-button><div class="dialog-footer-actions"><el-button @click="dialog = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></div></div></template>
   </el-dialog>
 
-  <el-drawer v-model="usageOpen" title="路线引用" size="440px"><div v-loading="usageLoading"><div v-if="!usage.length" class="empty-state"><div><Waypoints :size="22" /><strong>暂无路线引用</strong></div></div><div v-else class="usage-list"><div v-for="item in usage" :key="item.route_id"><strong>{{ item.route_code }}</strong><span>{{ item.product_name }}</span><code>v{{ item.route_version }}</code></div></div></div></el-drawer>
+  <el-drawer v-model="usageOpen" title="路线引用" size="440px"><div v-loading="usageLoading"><div v-if="!usage.length" class="empty-state"><div><Waypoints :size="22" /><strong>暂无路线引用</strong></div></div><div v-else class="usage-list"><div v-for="item in usage" :key="item.route_id"><strong>{{ item.route_code }}</strong><span>{{ item.product_name }}</span><code>v{{ item.route_version }} · {{ item.route_status === 'active' ? '生效' : item.route_status === 'draft' ? '草稿' : '停用' }}</code></div></div></div></el-drawer>
+
+  <ProfileImpactDrawer v-model="impactOpen" :profile="impactProfile ?? null" :initial-allergens="impactDraft" />
 </template>
 
 <style scoped>
 .form-grid { display: grid; grid-template-columns: 1fr 180px; gap: 14px; }.usage-list { display: grid; border-top: 1px solid var(--line); }.usage-list > div { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 13px 4px; border-bottom: 1px solid var(--line); }.usage-list strong { font: 12px "SFMono-Regular", Consolas, monospace; }.usage-list span { grid-column: 1; color: var(--muted); font-size: 12px; }.usage-list code { grid-column: 2; grid-row: 1 / 3; align-self: center; color: var(--muted); }
+.dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }.dialog-footer-actions { display: flex; gap: 9px; margin-left: auto; }
 @media (max-width: 540px) { .form-grid { grid-template-columns: 1fr; gap: 0; } }
 </style>

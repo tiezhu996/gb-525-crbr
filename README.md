@@ -39,6 +39,7 @@ docker compose down -v --remove-orphans
 - 工艺路线：维护有序步骤、每步引用的过敏原谱、声明过敏原、路线状态和乐观锁版本。
 - 接触关系：在路线内维护来源/目标步骤、接触类型、共享设备、清洗衰减、带入概率和证据记录。
 - 交叉接触矩阵：从真实路线、谱和已启用接触边计算目标步骤 × 过敏原矩阵，可按过敏原筛选并检查完整证据路径。
+- 谱影响推演（只读）：谱编辑确认前，用拟修改的过敏原集合对引用该谱的 active 路线各计算基线/拟议两套传播并比对矩阵，逐路线列出单元的新增、消失、升级、降级及变化最大的完整证据路径；按发起时的 `expected_version`（谱）与 `route_versions`（路线）计算，版本已变化返回 `409 profile_version_conflict` / `409 route_version_conflict`（含具体路线），无法计算的路线单独给出原因。推演不写库、不产生评估、不写审计，确认后仍需显式保存谱。
 - 评估工作台：执行 `queued -> calculating -> pending_review -> accepted | rejected` 状态流；输入变化使旧结果变为 `stale`。
 - 审计检索：记录 request ID、操作者、实体、动作、前后摘要和版本元数据，并提供版本摘要对比。
 
@@ -189,6 +190,7 @@ pending_review | accepted | rejected --输入变化--> stale
 | `GET` | `/auth/me` | 当前用户 |
 | `GET/POST` | `/profiles` | 查询 / 创建谱 |
 | `GET/PUT` | `/profiles/:id` | 详情与路线引用 / 新版本 |
+| `POST` | `/profiles/:id/impact-preview` | 只读推演：拟修改过敏原集合对引用它的生效路线矩阵的新增/消失/升级/降级影响；不保存谱、不改动评估 |
 | `GET/POST` | `/routes` | 查询 / 创建路线 |
 | `GET/PUT` | `/routes/:id` | 详情 / 新版本 |
 | `GET/POST` | `/contact-edges` | 查询 / 创建接触边 |

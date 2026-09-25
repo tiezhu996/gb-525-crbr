@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -75,25 +74,10 @@ func (s *ProfileService) Update(ctx context.Context, id uint, request dto.Update
 }
 
 func encodeAllergens(items []string) (datatypes.JSON, error) {
-	seen := make(map[string]string)
-	for _, item := range items {
-		clean := strings.TrimSpace(item)
-		if clean == "" {
-			continue
-		}
-		key := strings.ToLower(clean)
-		if _, exists := seen[key]; !exists {
-			seen[key] = clean
-		}
-	}
-	if len(seen) == 0 {
+	normalized, err := normalizeAllergenList(items)
+	if err != nil {
 		return nil, NewError(http.StatusBadRequest, "validation_error", "至少需要一个有效过敏原", nil)
 	}
-	normalized := make([]string, 0, len(seen))
-	for _, item := range seen {
-		normalized = append(normalized, item)
-	}
-	sort.Strings(normalized)
 	encoded, err := json.Marshal(normalized)
 	if err != nil {
 		return nil, fmt.Errorf("encode allergens: %w", err)

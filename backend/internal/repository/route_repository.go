@@ -13,6 +13,7 @@ import (
 type RouteRepository interface {
 	Create(context.Context, *model.ProcessRoute, AuditContext) error
 	Get(context.Context, uint) (model.ProcessRoute, error)
+	GetMany(context.Context, []uint) ([]model.ProcessRoute, error)
 	List(context.Context, dto.RouteQuery) ([]model.ProcessRoute, int64, error)
 	Update(context.Context, *model.ProcessRoute, uint, AuditContext) error
 }
@@ -46,6 +47,17 @@ func (r *routeRepository) Get(ctx context.Context, id uint) (model.ProcessRoute,
 		return model.ProcessRoute{}, fmt.Errorf("get process route: %w", err)
 	}
 	return route, nil
+}
+
+func (r *routeRepository) GetMany(ctx context.Context, ids []uint) ([]model.ProcessRoute, error) {
+	if len(ids) == 0 {
+		return []model.ProcessRoute{}, nil
+	}
+	var routes []model.ProcessRoute
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Order("route_code").Find(&routes).Error; err != nil {
+		return nil, fmt.Errorf("get process routes: %w", err)
+	}
+	return routes, nil
 }
 
 func (r *routeRepository) List(ctx context.Context, query dto.RouteQuery) ([]model.ProcessRoute, int64, error) {

@@ -1,6 +1,7 @@
 import { api, page, unwrap } from './client'
 import type { AllergenProfile, AuditEvent, ContactEdge, MatrixResult, ProcessRoute, User, VersionDiff } from '@/types/domain'
 import type { AssessmentRun, AssessmentStatus } from '@/types/assessment'
+import type { ProfileImpactPreview, ProfileImpactRequest } from '@/types/impact'
 
 export const authApi = {
   login: (username: string, password: string) => unwrap<{ token: string; expires_at: string; user: User }>(api.post('/auth/login', { username, password })),
@@ -9,9 +10,10 @@ export const authApi = {
 
 export const profileApi = {
   list: (params: Record<string, unknown> = {}) => page<AllergenProfile>(api.get('/profiles', { params })),
-  detail: (id: number) => unwrap<{ profile: AllergenProfile; used_by_routes: Array<{ route_id: number; route_code: string; product_name: string; route_version: number }> }>(api.get(`/profiles/${id}`)),
+  detail: (id: number) => unwrap<{ profile: AllergenProfile; used_by_routes: Array<{ route_id: number; route_code: string; product_name: string; route_status: string; route_version: number }> }>(api.get(`/profiles/${id}`)),
   create: (payload: Record<string, unknown>) => unwrap<AllergenProfile>(api.post('/profiles', payload)),
   update: (id: number, payload: Record<string, unknown>) => unwrap<AllergenProfile>(api.put(`/profiles/${id}`, payload)),
+  impactPreview: (id: number, payload: ProfileImpactRequest) => unwrap<ProfileImpactPreview>(api.post(`/profiles/${id}/impact-preview`, payload)),
 }
 
 export const routeApi = {

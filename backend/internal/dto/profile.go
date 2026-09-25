@@ -29,10 +29,26 @@ type ProfileUsage struct {
 	RouteID      uint   `json:"route_id"`
 	RouteCode    string `json:"route_code"`
 	ProductName  string `json:"product_name"`
+	RouteStatus  string `json:"route_status"`
 	RouteVersion uint   `json:"route_version"`
 }
 
 type ProfileDetail struct {
 	Profile any            `json:"profile"`
 	UsedBy  []ProfileUsage `json:"used_by_routes"`
+}
+
+// ProfileImpactPreviewRequest is a strictly read-only "what-if" payload: the
+// proposed allergen set is propagated against the routes that reference the
+// profile without persisting anything. Expected profile/route versions pin
+// the calculation to the versions the caller saw when initiating the preview.
+type ProfileImpactPreviewRequest struct {
+	Allergens       []string          `json:"allergens" validate:"required,min=1,dive,required,max=80"`
+	ExpectedVersion uint              `json:"expected_version" validate:"required,min=1"`
+	RouteVersions   []RouteVersionPin `json:"route_versions" validate:"dive"`
+}
+
+type RouteVersionPin struct {
+	RouteID         uint `json:"route_id" validate:"required,min=1"`
+	ExpectedVersion uint `json:"expected_version" validate:"required,min=1"`
 }
